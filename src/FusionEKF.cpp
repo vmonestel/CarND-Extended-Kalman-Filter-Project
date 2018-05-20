@@ -32,8 +32,8 @@ FusionEKF::FusionEKF() {
         0, 0, 0.09;
 
   // Initializing P
-  MatrixXd P_ = MatrixXd(4, 4);
-  P_ << 1, 0, 0, 0,
+  ekf_.P_ = MatrixXd(4, 4);
+  ekf_.P_ << 1, 0, 0, 0,
         0, 1, 0, 0,
         0, 0, 1000, 0,
         0, 0, 0, 1000;
@@ -42,14 +42,9 @@ FusionEKF::FusionEKF() {
   H_laser_ << 1, 0, 0, 0,
 		      0, 1, 0, 0;
 
-  // Initialize x, F, Q to pass them to the Kalman filter instance
-  VectorXd x_ = VectorXd(4);
-  x_ << 1, 1, 1, 1;
-  MatrixXd F_ = MatrixXd(4, 4);
-  MatrixXd Q_ = MatrixXd(4, 4);
-
-  // initialize a standard Kalman Filter class.
-  ekf_.Init(x_, P_, F_, H_laser_, R_laser_, Q_);
+  // Initialize x to pass them to the Kalman filter instance
+  ekf_.x_ = VectorXd(4);
+  ekf_.x_ << 1, 1, 1, 1;
 }
 
 /**
@@ -64,32 +59,35 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
    *  Initialization
    ****************************************************************************/
   if (!is_initialized_) {
-    /**
-    TODO:
-      * Initialize the state ekf_.x_ with the first measurement.
-      * Create the covariance matrix.
-      * Remember: you'll need to convert radar from polar to cartesian coordinates.
-    */
     // first measurement
-    cout << "EKF: " << endl;
+    cout << "EKF init: " << endl;
 
     if (measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
       cout << "EKF : RADAR Initial state" << endl;
-      double x = 0;
-      double y = 0;
+
+      // Get measurements
       double rho = measurement_pack.raw_measurements_[0];
       double phi = measurement_pack.raw_measurements_[1];
-      double ro_dot = measurement_pack.raw_measurements_[2];
+      double rho_dot = measurement_pack.raw_measurements_[2];
 
-      x = rho * cos(phi);
-      y = rho * sin(phi);
+      // Convert polar to cartesian for position
+      double x = rho * cos(phi);
+      double y = rho * sin(phi);
+
+      // Check for valid range
       if(fabs(x) < 0.0001){
         x = 0.0001;
       }
       if(fabs(y) < 0.0001){
         y = 0.0001;
       }
-      ekf_.x_ << x, y, ro_dot * cos(phi), ro_dot * sin(phi);
+
+      // Calculate velocity components
+      double vx = rho_dot * cos(phi);
+      double vy = rho_dot * sin(phi);
+
+      // Update initial state of vector x
+      ekf_.x_ << x, y, vx, vy;
     }
     else if (measurement_pack.sensor_type_ == MeasurementPackage::LASER) {
       /**
@@ -99,9 +97,12 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
       ekf_.x_ << measurement_pack.raw_measurements_[0], measurement_pack.raw_measurements_[1], 0, 0;
     }
 
-    // done initializing, no need to predict or update
+
+    // Get the first timestamp in seconds
     previous_timestamp_ = measurement_pack.timestamp_;
+    // Set initialized flag to true
     is_initialized_ = true;
+    // done initializing, no need to predict or update
     return;
   }
 
@@ -116,13 +117,15 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
      * Update the process noise covariance matrix.
      * Use noise_ax = 9 and noise_ay = 9 for your Q matrix.
    */
-  double dt = (measurement_pack.timestamp_ - previous_timestamp_) / 1000000.0;
+
+  // Get the delta t from previous and current timestamps
+  double time_diff = (measurement_pack.timestamp_ - previous_timestamp_) / 1000000.0;
   previous_timestamp_ = measurement_pack.timestamp_;
 
   // State transition matrix update
   ekf_.F_ = MatrixXd(4, 4);
-  ekf_.F_ << 1, 0, dt, 0,
-             0, 1, 0, dt,
+  ekf_.F_ << 1, 0, time_diff, 0,
+             0, 1, 0, time_diff,
              0, 0, 1, 0,
              0, 0, 0, 1;
 
@@ -131,9 +134,9 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
   double noise_ax = 9.0;
   double noise_ay = 9.0;
 
-  double dt_2 = dt * dt; //dt^2
-  double dt_3 = dt_2 * dt; //dt^3
-  double dt_4 = dt_3 * dt; //dt^4
+  double dt_2 = time_diff * time_diff; //dt^2
+  double dt_3 = dt_2 * time_diff; //dt^3
+  double dt_4 = dt_3 * time_diff; //dt^4
   double dt_4_4 = dt_4 / 4; //dt^4/4
   double dt_3_2 = dt_3 / 2; //dt^3/2
   ekf_.Q_ = MatrixXd(4, 4);
