@@ -42,6 +42,18 @@ void KalmanFilter::Update(const VectorXd &z) {
   P_ = (I - K * H_) * P_;
 }
 
+void KalmanFilter::NormalizeAngle(Eigen::VectorXd &y) {
+  // Normalize the angle between (-π, π) as expected by the
+  // Kalman filter
+  while (y(1) > M_PI || y(1) < -M_PI) {
+    if (y(1) > M_PI) {
+      y(1) -= M_PI;
+    } else {
+      y(1) += M_PI;
+    }
+  }
+}
+
 void KalmanFilter::UpdateEKF(const VectorXd &z) {
   // Update state of the extended Kalman Filter
   double px = x_[0];
@@ -60,10 +72,12 @@ void KalmanFilter::UpdateEKF(const VectorXd &z) {
 
   double phi = atan2(py, px);
   double rho_dot = (px * vx + py * vy) / rho;
-  VectorXd z_pred(3);
-  z_pred << rho, phi, rho_dot;
+  VectorXd h(3);
+  h << rho, phi, rho_dot;
 
-  VectorXd y = z - z_pred;
+  VectorXd y = z - h;
+  NormalizeAngle(y);
+
   MatrixXd Ht = H_.transpose();
   MatrixXd S = H_ * P_ * Ht + R_;
   MatrixXd Si = S.inverse();
